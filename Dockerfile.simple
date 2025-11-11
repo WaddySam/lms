@@ -25,8 +25,8 @@ RUN bench init --skip-assets --python $(which python3) frappe-bench || true
 # Set working directory to bench
 WORKDIR /home/frappe/frappe-bench
 
-# Install PostgreSQL adapter for Python
-RUN pip3 install psycopg2-binary
+# Install PostgreSQL adapter and gunicorn for Python
+RUN pip3 install psycopg2-binary gunicorn
 
 # Copy the LMS app
 COPY --chown=frappe:frappe ./lms ./apps/lms
