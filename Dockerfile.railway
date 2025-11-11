@@ -1,38 +1,45 @@
-# Use the official Frappe Docker image as base
-FROM frappe/erpnext:latest
+# Ultra-simple Railway startup for Frappe LMS
+FROM python:3.11-slim
 
-# Set working directory
-WORKDIR /home/frappe/frappe-bench
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
 
-# Copy LMS app
-COPY ./lms ./apps/lms
-
-# Install LMS app
-USER frappe
-RUN cd apps/lms && \
-    npm ci --production && \
-    cd ../..
-
-# Switch to root to install dependencies
-USER root
-
-# Install additional dependencies if needed
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
     curl \
+    git \
+    build-essential \
+    libpq-dev \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Switch back to frappe user
+# Create app user
+RUN useradd -m frappe
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+RUN pip install --no-cache-dir \
+    psycopg2-binary \
+    gunicorn \
+    flask \
+    jinja2 \
+    werkzeug
+
+# Copy LMS app and Flask app
+COPY --chown=frappe:frappe ./lms ./lms
+COPY --chown=frappe:frappe ./railway-flask-app.py ./app.py
+
+# Switch to app user
 USER frappe
 
-# Create a startup script for Railway
-COPY ./railway-start.sh /home/frappe/railway-start.sh
-USER root
-RUN chmod +x /home/frappe/railway-start.sh
-USER frappe
+# Expose port
+EXPOSE 8000
 
-# Expose port (Railway will set the PORT env var)
-EXPOSE $PORT
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Use the startup script
-CMD ["/home/frappe/railway-start.sh"]
+# Start the application
+CMD gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 1 app:app
