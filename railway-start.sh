@@ -173,9 +173,15 @@ echo "Server will be available shortly..."
 bench use $SITE_NAME
 
 # Use gunicorn for proper host binding (Railway requires 0.0.0.0)
-exec gunicorn frappe.app:application \
+# Need to use bench's Python environment and set PYTHONPATH
+export PYTHONPATH=/home/frappe/frappe-bench/apps/frappe
+cd /home/frappe/frappe-bench
+
+# Use bench serve with gunicorn for Railway deployment
+exec /home/frappe/frappe-bench/env/bin/gunicorn frappe.app:application \
     --bind 0.0.0.0:$PORT \
     --workers 1 \
     --timeout 120 \
     --preload \
-    --max-requests 1000
+    --max-requests 1000 \
+    --pythonpath /home/frappe/frappe-bench/apps
