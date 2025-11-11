@@ -37,7 +37,7 @@ RUN mkdir -p sites && \
     echo "lms" >> sites/apps.txt
 
 # Copy startup script
-COPY --chown=frappe:frappe ./railway-start-simple.sh /home/frappe/railway-start.sh
+COPY --chown=frappe:frappe ./railway-start.sh /home/frappe/railway-start.sh
 
 # Make startup script executable
 USER root
