@@ -111,53 +111,72 @@ fi
 SITE_NAME=${FRAPPE_SITE_NAME_HEADER:-"lms.railway.app"}
 echo "Using site name: $SITE_NAME"
 
-# Force clean any existing corrupted site
+# Force clean any existing corrupted site - both filesystem and database
 if [ -d "sites/$SITE_NAME" ]; then
-    echo "Removing existing site to start fresh..."
+    echo "Removing existing site directory..."
     rm -rf "sites/$SITE_NAME"
 fi
 
-# Create site if it doesn't exist
-if [ ! -d "sites/$SITE_NAME" ]; then
-    echo "Creating new site: $SITE_NAME"
-    
-    # Install frappe if not present
-    if [ ! -d "apps/frappe" ]; then
-        echo "Getting Frappe app..."
-        bench get-app frappe || echo "Frappe already available"
-    fi
-    
-    # Extract database info for site creation
-    DB_NAME=$(python3 -c "
+# Also drop the site's database if it exists
+echo "Cleaning up any existing database for site..."
+python3 -c "
 import os
+import psycopg2
 from urllib.parse import urlparse
+
 url = urlparse(os.environ['DATABASE_URL'])
-print(url.path[1:])
-")
+site_db_name = '${SITE_NAME}'.replace('.', '_').replace('-', '_')
+
+try:
+    conn = psycopg2.connect(
+        database=url.path[1:],
+        user=url.username,
+        password=url.password,
+        host=url.hostname,
+        port=url.port,
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
     
-    # Create new site with PostgreSQL database
-    echo "Creating site with admin password..."
-    bench new-site $SITE_NAME \
-        --admin-password admin \
-        --mariadb-root-password dummy \
-        --db-type postgres \
-        --db-host $(python3 -c "from urllib.parse import urlparse; import os; print(urlparse(os.environ['DATABASE_URL']).hostname)") \
-        --db-port $(python3 -c "from urllib.parse import urlparse; import os; url=urlparse(os.environ['DATABASE_URL']); print(url.port or 5432)") \
-        --verbose \
-        --force
+    # Drop site-specific database user if exists
+    cursor.execute(f\"DROP USER IF EXISTS _{site_db_name[:16]}\")
+    cursor.execute(f\"DROP DATABASE IF EXISTS _{site_db_name[:16]}\")
     
-    # Install LMS app
-    echo "Installing LMS app..."
-    bench --site $SITE_NAME install-app lms
-    
-    # Set as current site
-    echo $SITE_NAME > sites/currentsite.txt
-    
-    echo "Site created successfully!"
-else
-    echo "Site $SITE_NAME already exists, running migrations..."
-    bench --site $SITE_NAME migrate || echo "Migration completed with warnings"
+    print('Cleaned up database artifacts')
+    cursor.close()
+    conn.close()
+except Exception as e:
+    print(f'Database cleanup: {e}')
+" || true
+
+# Create site
+echo "Creating new site: $SITE_NAME"
+
+# Install frappe if not present
+if [ ! -d "apps/frappe" ]; then
+    echo "Getting Frappe app..."
+    bench get-app frappe || echo "Frappe already available"
 fi
+
+# Create new site with PostgreSQL database
+echo "Creating site with admin password..."
+bench new-site $SITE_NAME \
+    --admin-password admin \
+    --mariadb-root-password dummy \
+    --db-type postgres \
+    --db-host $(python3 -c "from urllib.parse import urlparse; import os; print(urlparse(os.environ['DATABASE_URL']).hostname)") \
+    --db-port $(python3 -c "from urllib.parse import urlparse; import os; url=urlparse(os.environ['DATABASE_URL']); print(url.port or 5432)") \
+    --verbose \
+    --force
+
+# Install LMS app
+echo "Installing LMS app..."
+bench --site $SITE_NAME install-app lms
+
+# Set as current site
+echo $SITE_NAME > sites/currentsite.txt
+
+echo "Site created successfully!"
 
 echo "Setting up site configuration..."
 bench --site $SITE_NAME set-config developer_mode 1
@@ -178,12 +197,11 @@ echo "Server will be available shortly..."
 # Set current site for bench commands
 bench use $SITE_NAME
 
-# Start gunicorn directly from bench's virtualenv with proper module path
-# The bench env has frappe installed correctly
-cd /home/frappe/frappe-bench
-exec env/bin/gunicorn frappe.app:application \
+# Start gunicorn from bench's virtualenv with proper Python path
+# Use bench's env/bin/python to ensure frappe module is found
+cd /home/frappe/frappe-bench/sites
+exec /home/frappe/frappe-bench/env/bin/python -m gunicorn frappe.app:application \
     --bind 0.0.0.0:$PORT \
     --workers 1 \
     --timeout 120 \
-    --chdir /home/frappe/frappe-bench/sites \
     --preload
