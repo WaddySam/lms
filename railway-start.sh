@@ -111,6 +111,12 @@ fi
 SITE_NAME=${FRAPPE_SITE_NAME_HEADER:-"lms.railway.app"}
 echo "Using site name: $SITE_NAME"
 
+# Force clean any existing corrupted site
+if [ -d "sites/$SITE_NAME" ]; then
+    echo "Removing existing site to start fresh..."
+    rm -rf "sites/$SITE_NAME"
+fi
+
 # Create site if it doesn't exist
 if [ ! -d "sites/$SITE_NAME" ]; then
     echo "Creating new site: $SITE_NAME"
@@ -172,16 +178,12 @@ echo "Server will be available shortly..."
 # Set current site for bench commands
 bench use $SITE_NAME
 
-# Use gunicorn for proper host binding (Railway requires 0.0.0.0)
-# Need to use bench's Python environment and set PYTHONPATH
-export PYTHONPATH=/home/frappe/frappe-bench/apps/frappe
+# Start gunicorn directly from bench's virtualenv with proper module path
+# The bench env has frappe installed correctly
 cd /home/frappe/frappe-bench
-
-# Use bench serve with gunicorn for Railway deployment
-exec /home/frappe/frappe-bench/env/bin/gunicorn frappe.app:application \
+exec env/bin/gunicorn frappe.app:application \
     --bind 0.0.0.0:$PORT \
     --workers 1 \
     --timeout 120 \
-    --preload \
-    --max-requests 1000 \
-    --pythonpath /home/frappe/frappe-bench/apps
+    --chdir /home/frappe/frappe-bench/sites \
+    --preload
