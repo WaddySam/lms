@@ -69,8 +69,9 @@ fi
 if [ ! -z "$SMTP_HOST" ]; then
     echo "Configuring email settings..."
     bench set-config -g mail_server "$SMTP_HOST"
-    bench set-config -g mail_port "${SMTP_PORT:-587}"
-    bench set-config -g use_tls "${SMTP_USE_TLS:-1}"
+    bench set-config -g mail_port "${SMTP_PORT:-465}"
+    bench set-config -g use_ssl "${SMTP_USE_SSL:-1}"
+    bench set-config -g use_tls "0"
     bench set-config -g mail_login "$SMTP_USER"
     bench set-config -g mail_password "$SMTP_PASSWORD"
     bench set-config -g auto_email_id "${SMTP_DEFAULT_FROM:-$SMTP_USER}"
