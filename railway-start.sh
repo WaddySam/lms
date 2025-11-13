@@ -1,17 +1,35 @@
 #!/bin/bash
-set -e
 
-# Enable verbose logging
+# Don't exit on error initially to see what fails
+set +e
 set -x
 
 echo "=========================================="
-echo "Starting Frappe LMS on Railway..."
+echo "SCRIPT STARTED - $(date)"
 echo "=========================================="
 echo "Current user: $(whoami)"
 echo "Current directory: $(pwd)"
+echo "Home directory: $HOME"
+echo "PATH: $PATH"
+echo "DATABASE_URL exists: $([ -n "$DATABASE_URL" ] && echo 'yes' || echo 'no')"
+echo "REDIS_URL exists: $([ -n "$REDIS_URL" ] && echo 'yes' || echo 'no')"
+echo "PORT: ${PORT:-not set}"
 
-cd /home/frappe/frappe-bench
-echo "Changed to: $(pwd)"
+# List directory contents
+echo "Contents of /home/frappe:"
+ls -la /home/frappe/ || echo "Failed to list /home/frappe"
+
+echo "Contents of /home/frappe/frappe-bench:"
+ls -la /home/frappe/frappe-bench/ || echo "Failed to list /home/frappe/frappe-bench"
+
+cd /home/frappe/frappe-bench || {
+    echo "FATAL: Failed to cd to /home/frappe/frappe-bench"
+    exit 1
+}
+echo "Successfully changed to: $(pwd)"
+
+# Re-enable exit on error
+set -e
 
 # Extract database credentials
 DB_USER=$(echo $DATABASE_URL | sed 's/.*:\/\/\([^:]*\):.*/\1/')
