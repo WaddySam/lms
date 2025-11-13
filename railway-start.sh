@@ -60,4 +60,4 @@ bench --site $SITE_NAME migrate
 
 # Start server
 echo "Starting on port $PORT..."
-exec bench serve --port $PORT --host 0.0.0.0
+exec bench serve --port $PORT --host 0.0.0.0 --noreload --nothreading
