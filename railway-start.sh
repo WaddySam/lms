@@ -92,7 +92,6 @@ bench --site $SITE_NAME migrate
 
 # Start Frappe server
 echo "Starting Frappe on port $PORT..."
-cd /workspace/frappe-bench
 exec gunicorn -b 0.0.0.0:$PORT \
     -w 2 \
     --timeout 120 \
