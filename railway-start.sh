@@ -88,16 +88,17 @@ echo $SITE_NAME > sites/currentsite.txt
 echo "Running migrations..."
 bench --site $SITE_NAME migrate
 
+# Build static assets
+echo "Building static assets..."
+bench --site $SITE_NAME clear-cache
+bench --site $SITE_NAME clear-website-cache
+bench build --apps lms
+
+# Set up environment for serving static files
+echo "Setting up environment..."
+export FRAPPE_SITE=$SITE_NAME
+
 # Start Frappe server
 echo "Starting Frappe on port $PORT..."
-export PYTHONPATH=/home/frappe/frappe-bench/apps:/home/frappe/frappe-bench/env/lib/python3.10/site-packages:$PYTHONPATH
-cd /home/frappe/frappe-bench/sites
-exec ../env/bin/gunicorn -b 0.0.0.0:$PORT \
-    -w 2 \
-    --timeout 120 \
-    --graceful-timeout 30 \
-    --log-level info \
-    --access-logfile - \
-    --error-logfile - \
-    --chdir /home/frappe/frappe-bench/sites \
-    frappe.app:application
+cd /home/frappe/frappe-bench
+exec bench serve --port $PORT --noreload --nothreading
