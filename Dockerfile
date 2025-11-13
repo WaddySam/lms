@@ -23,4 +23,9 @@ RUN bench get-app lms https://github.com/frappe/lms.git
 COPY --chown=frappe:frappe railway-start.sh /home/frappe/frappe-bench/railway-start.sh
 RUN chmod +x /home/frappe/frappe-bench/railway-start.sh
 
+# Expose port
+EXPOSE 8000
+
+# Set entrypoint
+ENTRYPOINT ["/bin/bash"]
 CMD ["/home/frappe/frappe-bench/railway-start.sh"]

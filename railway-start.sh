@@ -1,8 +1,17 @@
 #!/bin/bash
 set -e
 
+# Enable verbose logging
+set -x
+
+echo "=========================================="
 echo "Starting Frappe LMS on Railway..."
+echo "=========================================="
+echo "Current user: $(whoami)"
+echo "Current directory: $(pwd)"
+
 cd /home/frappe/frappe-bench
+echo "Changed to: $(pwd)"
 
 # Extract database credentials
 DB_USER=$(echo $DATABASE_URL | sed 's/.*:\/\/\([^:]*\):.*/\1/')
