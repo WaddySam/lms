@@ -65,24 +65,22 @@ if [ ! -z "$REDIS_URL" ]; then
     bench set-config -g redis_socketio "$REDIS_URL"
 fi
 
-# Remove corrupted site if it exists
-if [ -d "sites/$SITE_NAME" ]; then
-    echo "Removing existing site directory to recreate..."
-    rm -rf "sites/$SITE_NAME"
+# Check if site already exists
+if [ ! -d "sites/$SITE_NAME" ]; then
+    echo "Creating site $SITE_NAME..."
+    bench new-site $SITE_NAME \
+        --db-type postgres \
+        --db-name "$DB_NAME" \
+        --db-root-username "$DB_USER" \
+        --db-root-password "$DB_PASS" \
+        --admin-password admin \
+        --force
+    
+    echo "Installing LMS app..."
+    bench --site $SITE_NAME install-app lms
+else
+    echo "Site $SITE_NAME already exists, skipping creation"
 fi
-
-# Create site with explicit database credentials
-echo "Creating site $SITE_NAME..."
-bench new-site $SITE_NAME \
-    --db-type postgres \
-    --db-name "$DB_NAME" \
-    --db-root-username "$DB_USER" \
-    --db-root-password "$DB_PASS" \
-    --admin-password admin \
-    --force
-
-echo "Installing LMS app..."
-bench --site $SITE_NAME install-app lms
 
 echo $SITE_NAME > sites/currentsite.txt
 
@@ -92,11 +90,14 @@ bench --site $SITE_NAME migrate
 
 # Start Frappe server
 echo "Starting Frappe on port $PORT..."
-exec gunicorn -b 0.0.0.0:$PORT \
+export PYTHONPATH=/home/frappe/frappe-bench/apps:/home/frappe/frappe-bench/env/lib/python3.10/site-packages:$PYTHONPATH
+cd /home/frappe/frappe-bench/sites
+exec ../env/bin/gunicorn -b 0.0.0.0:$PORT \
     -w 2 \
     --timeout 120 \
     --graceful-timeout 30 \
     --log-level info \
     --access-logfile - \
     --error-logfile - \
+    --chdir /home/frappe/frappe-bench/sites \
     frappe.app:application
