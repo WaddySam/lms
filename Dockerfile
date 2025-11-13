@@ -19,13 +19,13 @@ WORKDIR /home/frappe/frappe-bench
 # Get LMS app
 RUN bench get-app lms https://github.com/frappe/lms.git
 
-# Copy startup script
+# Copy startup scripts
 COPY --chown=frappe:frappe railway-start.sh /home/frappe/frappe-bench/railway-start.sh
-RUN chmod +x /home/frappe/frappe-bench/railway-start.sh
+COPY --chown=frappe:frappe test-start.sh /home/frappe/frappe-bench/test-start.sh
+RUN chmod +x /home/frappe/frappe-bench/railway-start.sh /home/frappe/frappe-bench/test-start.sh
 
 # Expose port
 EXPOSE 8000
 
-# Set entrypoint
-ENTRYPOINT ["/bin/bash"]
-CMD ["/home/frappe/frappe-bench/railway-start.sh"]
+# Use test script temporarily to verify container can start
+CMD ["/bin/bash", "/home/frappe/frappe-bench/test-start.sh"]
