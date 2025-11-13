@@ -39,7 +39,8 @@ DB_PORT=$(echo $DATABASE_URL | sed 's/.*:\([0-9]*\)\/.*/\1/')
 DB_NAME=$(echo $DATABASE_URL | sed 's/.*\/\([^?]*\).*/\1/')
 
 SITE_NAME=${RAILWAY_PUBLIC_DOMAIN:-"site1.local"}
-PORT=${PORT:-8000}
+# Railway routes to port 8000 - use it directly
+PORT=8000
 
 echo "Database: $DB_HOST:$DB_PORT/$DB_NAME"
 echo "Site: $SITE_NAME"
