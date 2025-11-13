@@ -99,8 +99,13 @@ if [ "$SITE_EXISTS" = "0" ]; then
     bench --site $SITE_NAME install-app lms
 else
     echo "Site already exists in database (found $SITE_EXISTS tables). Restoring site directory..."
-    # Create site directory structure
+    # Create site directory structure with all necessary subdirectories
     mkdir -p "sites/$SITE_NAME"
+    mkdir -p "sites/$SITE_NAME/locks"
+    mkdir -p "sites/$SITE_NAME/logs"
+    mkdir -p "sites/$SITE_NAME/private/backups"
+    mkdir -p "sites/$SITE_NAME/private/files"
+    mkdir -p "sites/$SITE_NAME/public/files"
     
     # Create minimal site_config.json
     cat > "sites/$SITE_NAME/site_config.json" <<EOF
