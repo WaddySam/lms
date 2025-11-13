@@ -1,115 +1,100 @@
-#!/bin/bash#!/bin/bash
+#!/bin/bash
 
+# Don't exit on error initially to see what fails
+set +e
+set -x
+
+echo "=========================================="
+echo "SCRIPT STARTED - $(date)"
+echo "=========================================="
+echo "Current user: $(whoami)"
+echo "Current directory: $(pwd)"
+echo "Home directory: $HOME"
+echo "PATH: $PATH"
+echo "DATABASE_URL exists: $([ -n "$DATABASE_URL" ] && echo 'yes' || echo 'no')"
+echo "REDIS_URL exists: $([ -n "$REDIS_URL" ] && echo 'yes' || echo 'no')"
+echo "PORT: ${PORT:-not set}"
+
+# List directory contents
+echo "Contents of /home/frappe:"
+ls -la /home/frappe/ || echo "Failed to list /home/frappe"
+
+echo "Contents of /home/frappe/frappe-bench:"
+ls -la /home/frappe/frappe-bench/ || echo "Failed to list /home/frappe/frappe-bench"
+
+cd /home/frappe/frappe-bench || {
+    echo "FATAL: Failed to cd to /home/frappe/frappe-bench"
+    exit 1
+}
+echo "Successfully changed to: $(pwd)"
+
+# Re-enable exit on error
 set -e
 
-# Railway startup script for Frappe LMS
+# Extract database credentials
+DB_USER=$(echo $DATABASE_URL | sed 's/.*:\/\/\([^:]*\):.*/\1/')
+DB_PASS=$(echo $DATABASE_URL | sed 's/.*:\/\/[^:]*:\([^@]*\)@.*/\1/')
+DB_HOST=$(echo $DATABASE_URL | sed 's/.*@\([^:]*\):.*/\1/')
+DB_PORT=$(echo $DATABASE_URL | sed 's/.*:\([0-9]*\)\/.*/\1/')
+DB_NAME=$(echo $DATABASE_URL | sed 's/.*\/\([^?]*\).*/\1/')
 
-echo "Starting Frappe LMS on Railway..."
+SITE_NAME=${RAILWAY_PUBLIC_DOMAIN:-"site1.local"}
+# Railway routes to port 8000 - use it directly
+PORT=8000
 
-set -e
-
-cd /home/frappe/frappe-bench
-
-# Set default values
-
-# Extract database credentials from DATABASE_URLexport FRAPPE_SITE_NAME_HEADER=${FRAPPE_SITE_NAME_HEADER:-$RAILWAY_PUBLIC_DOMAIN}
-
-DB_HOST=$(echo $DATABASE_URL | sed -E 's|.*@([^:]+):.*|\1|')export PORT=${PORT:-8000}
-
-DB_PORT=$(echo $DATABASE_URL | sed -E 's|.*:([0-9]+)/.*|\1|')
-
-DB_NAME=$(echo $DATABASE_URL | sed -E 's|.*/([^?]+).*|\1|')# Wait for database to be ready
-
-DB_USER=$(echo $DATABASE_URL | sed -E 's|.*://([^:]+):.*|\1|')echo "Waiting for database connection..."
-
-DB_PASS=$(echo $DATABASE_URL | sed -E 's|.*://[^:]+:([^@]+)@.*|\1|')while ! nc -z $(echo $DATABASE_URL | sed 's/.*@\([^:]*\).*/\1/') $(echo $DATABASE_URL | sed 's/.*:\([0-9]*\)\/.*/\1/'); do
-
-  sleep 1
-
-SITE_NAME=${RAILWAY_PUBLIC_DOMAIN:-"site1.localhost"}done
-
+echo "Database: $DB_HOST:$DB_PORT/$DB_NAME"
 echo "Site: $SITE_NAME"
 
-# Extract database credentials from DATABASE_URL
+# Wait for database
+echo "Waiting for database..."
+while ! nc -z $DB_HOST $DB_PORT; do
+  sleep 1
+done
+echo "Database ready!"
 
-# Create common_site_config.jsonDB_USER=$(echo $DATABASE_URL | sed 's/.*:\/\/\([^:]*\):.*/\1/')
-
-cat > sites/common_site_config.json << EOFDB_PASS=$(echo $DATABASE_URL | sed 's/.*:\/\/[^:]*:\([^@]*\)@.*/\1/')
-
-{DB_HOST=$(echo $DATABASE_URL | sed 's/.*@\([^:]*\):.*/\1/')
-
-  "db_host": "$DB_HOST",DB_PORT=$(echo $DATABASE_URL | sed 's/.*:\([0-9]*\)\/.*/\1/')
-
-  "db_port": $DB_PORT,DB_NAME=$(echo $DATABASE_URL | sed 's/.*\/\([^?]*\).*/\1/')
-
-  "db_type": "postgres",
-
-  "redis_cache": "$REDIS_URL",# Configure Frappe
-
-  "redis_queue": "$REDIS_URL",echo "Configuring Frappe for Railway..."
-
-  "redis_socketio": "$REDIS_URL"
-
-}# Set configuration
-
-EOFbench set-config -g db_host $DB_HOST
-
+# Configure bench
+bench set-config -g db_host $DB_HOST
 bench set-config -g db_port $DB_PORT
+bench set-config -g db_name $DB_NAME
+bench set-config -g db_password $DB_PASS
 
-# Create site if it doesn't existbench set-config -g db_name $DB_NAME
+# Configure Redis
+if [ ! -z "$REDIS_URL" ]; then
+    bench set-config -g redis_cache "$REDIS_URL"
+    bench set-config -g redis_queue "$REDIS_URL"
+    bench set-config -g redis_socketio "$REDIS_URL"
+fi
 
-if [ ! -d "sites/$SITE_NAME" ]; thenbench set-config -g db_password $DB_PASS
+# Remove corrupted site if it exists
+if [ -d "sites/$SITE_NAME" ]; then
+    echo "Removing existing site directory to recreate..."
+    rm -rf "sites/$SITE_NAME"
+fi
 
-  echo "Creating new site..."
-
-  bench new-site $SITE_NAME \# Configure Redis
-
-    --db-type postgres \if [ ! -z "$REDIS_URL" ]; then
-
-    --db-host "$DB_HOST" \    bench set-config -g redis_cache "$REDIS_URL"
-
-    --db-port "$DB_PORT" \    bench set-config -g redis_queue "$REDIS_URL"
-
-    --db-name "$DB_NAME" \    bench set-config -g redis_socketio "$REDIS_URL"
-
-    --db-password "$DB_PASS" \fi
-
+# Create site with explicit database credentials
+echo "Creating site $SITE_NAME..."
+bench new-site $SITE_NAME \
+    --db-type postgres \
+    --db-name "$DB_NAME" \
     --admin-password admin \
+    --force
 
-    --no-mariadb-socket# Set site name
-
-  if [ ! -z "$FRAPPE_SITE_NAME_HEADER" ]; then
-
-  bench --site $SITE_NAME install-app lms    SITE_NAME=$FRAPPE_SITE_NAME_HEADER
-
-fielse
-
-    SITE_NAME="site1.local"
-
-# Set as current sitefi
+echo "Installing LMS app..."
+bench --site $SITE_NAME install-app lms
 
 echo $SITE_NAME > sites/currentsite.txt
 
-# Create site if it doesn't exist
-
-# Start Frappeif [ ! -d "sites/$SITE_NAME" ]; then
-
-bench serve --port ${PORT:-8000} --host 0.0.0.0    echo "Creating site: $SITE_NAME"
-
-    bench new-site $SITE_NAME --admin-password admin --db-name $DB_NAME --force
-    
-    # Install LMS app
-    echo "Installing LMS app..."
-    bench --site $SITE_NAME install-app lms
-    
-    # Set site as default
-    echo $SITE_NAME > sites/currentsite.txt
-fi
-
-# Migrate if needed
+# Run migrations
 echo "Running migrations..."
 bench --site $SITE_NAME migrate
 
-# Start the application
-echo "Starting Frappe LMS on port $PORT..."
-bench serve --port $PORT --host 0.0.0.0
+# Start Frappe using Gunicorn
+echo "Starting Frappe on port $PORT..."
+exec gunicorn -b 0.0.0.0:$PORT \
+    -w 2 \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --log-level info \
+    --access-logfile - \
+    --error-logfile - \
+    frappe.app:application
