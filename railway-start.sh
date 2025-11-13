@@ -90,6 +90,14 @@ echo $SITE_NAME > sites/currentsite.txt
 echo "Running migrations..."
 bench --site $SITE_NAME migrate
 
-# Start server
-echo "Starting on port $PORT..."
-exec bench serve --port $PORT --host 0.0.0.0 --noreload --nothreading
+# Start Frappe server
+echo "Starting Frappe on port $PORT..."
+cd /workspace/frappe-bench
+exec gunicorn -b 0.0.0.0:$PORT \
+    -w 2 \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --log-level info \
+    --access-logfile - \
+    --error-logfile - \
+    frappe.app:application
