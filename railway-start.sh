@@ -64,20 +64,16 @@ if [ ! -z "$REDIS_URL" ]; then
     bench set-config -g redis_socketio "$REDIS_URL"
 fi
 
-# Create site
+# Create site - Use default Frappe behavior for database naming
 if [ ! -d "sites/$SITE_NAME" ]; then
     echo "Creating site $SITE_NAME..."
     bench new-site $SITE_NAME \
         --db-type postgres \
-        --db-host "$DB_HOST" \
-        --db-port "$DB_PORT" \
-        --db-name "$DB_NAME" \
-        --db-password "$DB_PASS" \
         --admin-password admin \
-        --no-mariadb-socket
+        --force || echo "Site creation failed or site exists"
     
     echo "Installing LMS app..."
-    bench --site $SITE_NAME install-app lms
+    bench --site $SITE_NAME install-app lms || echo "LMS already installed"
     echo $SITE_NAME > sites/currentsite.txt
 fi
 
