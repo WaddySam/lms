@@ -81,9 +81,12 @@ fi
 # Set admin password from environment or use default
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
 
-# Check if site already exists
-if [ ! -d "sites/$SITE_NAME" ]; then
-    echo "Creating site $SITE_NAME..."
+# Check if database already has site data (check for tabSingles table which is created during site creation)
+echo "Checking if site already exists in database..."
+SITE_EXISTS=$(PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='tabSingles';" 2>/dev/null || echo "0")
+
+if [ "$SITE_EXISTS" = "0" ]; then
+    echo "Database is empty. Creating new site $SITE_NAME..."
     bench new-site $SITE_NAME \
         --db-type postgres \
         --db-name "$DB_NAME" \
@@ -95,7 +98,22 @@ if [ ! -d "sites/$SITE_NAME" ]; then
     echo "Installing LMS app..."
     bench --site $SITE_NAME install-app lms
 else
-    echo "Site $SITE_NAME already exists, skipping creation"
+    echo "Site already exists in database (found $SITE_EXISTS tables). Restoring site directory..."
+    # Create site directory structure
+    mkdir -p "sites/$SITE_NAME"
+    
+    # Create minimal site_config.json
+    cat > "sites/$SITE_NAME/site_config.json" <<EOF
+{
+ "db_name": "$DB_NAME",
+ "db_password": "$DB_PASS",
+ "db_type": "postgres",
+ "db_host": "$DB_HOST",
+ "db_port": $DB_PORT
+}
+EOF
+    
+    echo "Site directory restored from existing database"
 fi
 
 echo $SITE_NAME > sites/currentsite.txt
