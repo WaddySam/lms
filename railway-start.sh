@@ -56,6 +56,7 @@ echo "Database ready!"
 bench set-config -g db_host $DB_HOST
 bench set-config -g db_port $DB_PORT
 bench set-config -g db_name $DB_NAME
+bench set-config -g db_user $DB_USER
 bench set-config -g db_password $DB_PASS
 
 # Configure Redis
