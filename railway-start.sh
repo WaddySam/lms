@@ -76,6 +76,8 @@ echo "Creating site $SITE_NAME..."
 bench new-site $SITE_NAME \
     --db-type postgres \
     --db-name "$DB_NAME" \
+    --db-root-username "$DB_USER" \
+    --db-root-password "$DB_PASS" \
     --admin-password admin \
     --force
 
