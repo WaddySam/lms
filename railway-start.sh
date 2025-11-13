@@ -99,6 +99,11 @@ fi
 
 echo $SITE_NAME > sites/currentsite.txt
 
+# Enable login with email and mobile
+echo "Configuring login options..."
+bench --site $SITE_NAME set-config allow_login_using_mobile_number 1
+bench --site $SITE_NAME set-config allow_login_using_user_name 1
+
 # Run migrations
 echo "Running migrations..."
 bench --site $SITE_NAME migrate
