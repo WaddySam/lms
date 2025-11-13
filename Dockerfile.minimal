@@ -1,0 +1,53 @@
+FROM python:3.11-slim-bookworm
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    postgresql-client \
+    redis-tools \
+    netcat-openbsd \
+    curl \
+    nodejs \
+    npm \
+    && npm install -g yarn \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create frappe user
+RUN useradd -m -s /bin/bash frappe
+
+USER frappe
+WORKDIR /home/frappe
+
+# Install bench
+RUN pip install --no-cache-dir frappe-bench
+
+# Initialize minimal bench
+RUN bench init --skip-redis-config-generation --frappe-branch version-15 --no-procfile --no-backups frappe-bench
+
+WORKDIR /home/frappe/frappe-bench
+
+# Get LMS app without dependencies  
+RUN bench get-app lms https://github.com/frappe/lms.git --skip-assets
+
+# Build assets
+RUN bench build --app lms
+
+# Aggressive cleanup
+USER root
+RUN find /home/frappe -type f -name "*.pyc" -delete \
+    && find /home/frappe -type d -name "__pycache__" -delete \
+    && find /home/frappe -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true \
+    && rm -rf /home/frappe/.cache \
+    && rm -rf /root/.cache \
+    && pip cache purge \
+    && npm cache clean --force \
+    && yarn cache clean
+
+USER frappe
+
+COPY --chown=frappe:frappe railway-start.sh /home/frappe/frappe-bench/railway-start.sh
+RUN chmod +x /home/frappe/frappe-bench/railway-start.sh
+
+EXPOSE 8000
+CMD ["/bin/bash", "/home/frappe/frappe-bench/railway-start.sh"]

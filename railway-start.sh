@@ -65,6 +65,21 @@ if [ ! -z "$REDIS_URL" ]; then
     bench set-config -g redis_socketio "$REDIS_URL"
 fi
 
+# Configure email if SMTP variables are set
+if [ ! -z "$SMTP_HOST" ]; then
+    echo "Configuring email settings..."
+    bench set-config -g mail_server "$SMTP_HOST"
+    bench set-config -g mail_port "${SMTP_PORT:-587}"
+    bench set-config -g use_tls "${SMTP_USE_TLS:-1}"
+    bench set-config -g mail_login "$SMTP_USER"
+    bench set-config -g mail_password "$SMTP_PASSWORD"
+    bench set-config -g auto_email_id "${SMTP_DEFAULT_FROM:-$SMTP_USER}"
+    bench set-config -g always_use_account_email_id_as_sender "0"
+fi
+
+# Set admin password from environment or use default
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+
 # Check if site already exists
 if [ ! -d "sites/$SITE_NAME" ]; then
     echo "Creating site $SITE_NAME..."
@@ -73,7 +88,7 @@ if [ ! -d "sites/$SITE_NAME" ]; then
         --db-name "$DB_NAME" \
         --db-root-username "$DB_USER" \
         --db-root-password "$DB_PASS" \
-        --admin-password admin \
+        --admin-password "$ADMIN_PASSWORD" \
         --force
     
     echo "Installing LMS app..."
