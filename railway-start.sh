@@ -130,6 +130,15 @@ echo "Configuring login options..."
 bench --site $SITE_NAME set-config allow_login_using_mobile_number 1
 bench --site $SITE_NAME set-config allow_login_using_user_name 1
 
+# Debug: Check configs before migration
+echo "=== DEBUG: Checking configuration ==="
+echo "Global config (common_site_config.json):"
+cat sites/common_site_config.json | grep -E '"db_|redis' || echo "Config file not found"
+echo ""
+echo "Site config ($SITE_NAME/site_config.json):"
+cat "sites/$SITE_NAME/site_config.json" || echo "Site config not found"
+echo "=== END DEBUG ==="
+
 # Run migrations
 echo "Running migrations..."
 bench --site $SITE_NAME migrate
