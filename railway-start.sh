@@ -37,12 +37,66 @@ echo "Successfully changed to: $(pwd)"
 # Re-enable exit on error
 set -e
 
-# Extract database credentials
-DB_USER=$(echo $DATABASE_URL | sed 's/.*:\/\/\([^:]*\):.*/\1/')
-DB_PASS=$(echo $DATABASE_URL | sed 's/.*:\/\/[^:]*:\([^@]*\)@.*/\1/')
-DB_HOST=$(echo $DATABASE_URL | sed 's/.*@\([^:]*\):.*/\1/')
-DB_PORT=$(echo $DATABASE_URL | sed 's/.*:\([0-9]*\)\/.*/\1/')
-DB_NAME=$(echo $DATABASE_URL | sed 's/.*\/\([^?]*\).*/\1/')
+
+# Helper to safely embed arbitrary values in SQL string literals
+sql_escape_literal() {
+    printf "%s" "$1" | sed "s/'/''/g"
+}
+
+# Extract database credentials from DATABASE_URL (root credentials provided by Railway)
+ROOT_DB_USER=$(echo "$DATABASE_URL" | sed 's/.*:\/\/\([^:]*\):.*/\1/')
+ROOT_DB_PASS=$(echo "$DATABASE_URL" | sed 's/.*:\/\/[^:]*:\([^@]*\)@.*/\1/')
+DB_HOST=$(echo "$DATABASE_URL" | sed 's/.*@\([^:]*\):.*/\1/')
+DB_PORT=$(echo "$DATABASE_URL" | sed 's/.*:\([0-9]*\)\/.*/\1/')
+DB_NAME=$(echo "$DATABASE_URL" | sed 's/.*\/\([^?]*\).*/\1/')
+
+# Application-level credentials (fall back to the managed database name/user if not provided)
+APP_DB_USER=${FRAPPE_DB_USER:-$DB_NAME}
+if [ -n "$FRAPPE_DB_PASSWORD" ]; then
+    APP_DB_PASS="$FRAPPE_DB_PASSWORD"
+else
+    APP_DB_PASS="$ROOT_DB_PASS"
+fi
+
+set +x
+APP_DB_USER_ESC=$(sql_escape_literal "$APP_DB_USER")
+APP_DB_PASS_ESC=$(sql_escape_literal "$APP_DB_PASS")
+DB_NAME_ESC=$(sql_escape_literal "$DB_NAME")
+set -x
+
+# Ensure the application Postgres role exists and has the required privileges when different from root
+if [ "$APP_DB_USER" != "$ROOT_DB_USER" ]; then
+    echo "Ensuring Postgres role '$APP_DB_USER' exists..."
+    set +x
+    ROLE_EXISTS=$(PGPASSWORD=$ROOT_DB_PASS psql -h "$DB_HOST" -p "$DB_PORT" -U "$ROOT_DB_USER" -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='${APP_DB_USER_ESC}';")
+    if [ "$ROLE_EXISTS" != "1" ]; then
+        echo "Creating role '$APP_DB_USER'..."
+        PGPASSWORD=$ROOT_DB_PASS psql -h "$DB_HOST" -p "$DB_PORT" -U "$ROOT_DB_USER" -d postgres -c "CREATE ROLE \"$APP_DB_USER\" WITH LOGIN PASSWORD '${APP_DB_PASS_ESC}';"
+    else
+        echo "Role '$APP_DB_USER' already exists. Syncing password..."
+        PGPASSWORD=$ROOT_DB_PASS psql -h "$DB_HOST" -p "$DB_PORT" -U "$ROOT_DB_USER" -d postgres -c "ALTER ROLE \"$APP_DB_USER\" WITH LOGIN PASSWORD '${APP_DB_PASS_ESC}';"
+    fi
+
+    DB_OWNER=$(PGPASSWORD=$ROOT_DB_PASS psql -h "$DB_HOST" -p "$DB_PORT" -U "$ROOT_DB_USER" -d postgres -tAc "SELECT pg_catalog.pg_get_userbyid(datdba) FROM pg_database WHERE datname='${DB_NAME_ESC}';")
+    if [ "$DB_OWNER" != "$APP_DB_USER" ]; then
+        echo "Setting database '$DB_NAME' owner to '$APP_DB_USER'..."
+        PGPASSWORD=$ROOT_DB_PASS psql -h "$DB_HOST" -p "$DB_PORT" -U "$ROOT_DB_USER" -d postgres -c "ALTER DATABASE \"$DB_NAME\" OWNER TO \"$APP_DB_USER\";"
+    fi
+
+    echo "Granting privileges on database '$DB_NAME' to '$APP_DB_USER'..."
+    PGPASSWORD=$ROOT_DB_PASS psql -h "$DB_HOST" -p "$DB_PORT" -U "$ROOT_DB_USER" -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE \"$DB_NAME\" TO \"$APP_DB_USER\";"
+    PGPASSWORD=$ROOT_DB_PASS psql -h "$DB_HOST" -p "$DB_PORT" -U "$ROOT_DB_USER" -d "$DB_NAME" <<SQL
+GRANT ALL PRIVILEGES ON SCHEMA public TO "$APP_DB_USER";
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "$APP_DB_USER";
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "$APP_DB_USER";
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO "$APP_DB_USER";
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "$APP_DB_USER";
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "$APP_DB_USER";
+SQL
+    set -x
+else
+    echo "Using root database role '$ROOT_DB_USER' for application connections."
+fi
 
 SITE_NAME=${RAILWAY_PUBLIC_DOMAIN:-"site1.local"}
 # Railway routes to port 8000 - use it directly
@@ -52,13 +106,14 @@ PORT=8000
 unset PGUSER PGHOST PGPORT PGDATABASE PGPASSWORD
 
 # Set PostgreSQL environment variables explicitly to match our config
-export PGUSER="$DB_USER"
+export PGUSER="$APP_DB_USER"
 export PGHOST="$DB_HOST"
 export PGPORT="$DB_PORT"
 export PGDATABASE="$DB_NAME"
-export PGPASSWORD="$DB_PASS"
+export PGPASSWORD="$APP_DB_PASS"
 
 echo "Database: $DB_HOST:$DB_PORT/$DB_NAME"
+echo "Application DB user: $APP_DB_USER (root: $ROOT_DB_USER)"
 echo "Site: $SITE_NAME"
 
 # Wait for database
@@ -72,8 +127,8 @@ echo "Database ready!"
 bench set-config -g db_host $DB_HOST
 bench set-config -g db_port $DB_PORT
 bench set-config -g db_name $DB_NAME
-bench set-config -g db_user $DB_USER
-bench set-config -g db_password $DB_PASS
+bench set-config -g db_user $APP_DB_USER
+bench set-config -g db_password $APP_DB_PASS
 
 # Configure Redis
 if [ ! -z "$REDIS_URL" ]; then
@@ -100,15 +155,15 @@ ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
 
 # Check if database already has site data (check for tabSingles table which is created during site creation)
 echo "Checking if site already exists in database..."
-SITE_EXISTS=$(PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='tabSingles';" 2>/dev/null || echo "0")
+SITE_EXISTS=$(PGPASSWORD=$ROOT_DB_PASS psql -h $DB_HOST -p $DB_PORT -U $ROOT_DB_USER -d $DB_NAME -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='tabSingles';" 2>/dev/null || echo "0")
 
 if [ "$SITE_EXISTS" = "0" ]; then
     echo "Database is empty. Creating new site $SITE_NAME..."
     bench new-site $SITE_NAME \
         --db-type postgres \
         --db-name "$DB_NAME" \
-        --db-root-username "$DB_USER" \
-        --db-root-password "$DB_PASS" \
+        --db-root-username "$ROOT_DB_USER" \
+        --db-root-password "$ROOT_DB_PASS" \
         --admin-password "$ADMIN_PASSWORD" \
         --force
     
@@ -128,11 +183,11 @@ else
     cat > "sites/$SITE_NAME/site_config.json" <<EOF
 {
  "db_name": "$DB_NAME",
- "db_password": "$DB_PASS",
+ "db_password": "$APP_DB_PASS",
  "db_type": "postgres",
  "db_host": "$DB_HOST",
  "db_port": $DB_PORT,
- "db_user": "$DB_USER"
+ "db_user": "$APP_DB_USER"
 }
 EOF
     
