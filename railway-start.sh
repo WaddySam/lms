@@ -22,6 +22,12 @@ ls -la /home/frappe/ || echo "Failed to list /home/frappe"
 echo "Contents of /home/frappe/frappe-bench:"
 ls -la /home/frappe/frappe-bench/ || echo "Failed to list /home/frappe/frappe-bench"
 
+# Check for PostgreSQL environment variables that might override config
+echo "Checking PostgreSQL env vars:"
+echo "PGUSER: ${PGUSER:-not set}"
+echo "PGHOST: ${PGHOST:-not set}"
+echo "PGDATABASE: ${PGDATABASE:-not set}"
+
 cd /home/frappe/frappe-bench || {
     echo "FATAL: Failed to cd to /home/frappe/frappe-bench"
     exit 1
@@ -41,6 +47,16 @@ DB_NAME=$(echo $DATABASE_URL | sed 's/.*\/\([^?]*\).*/\1/')
 SITE_NAME=${RAILWAY_PUBLIC_DOMAIN:-"site1.local"}
 # Railway routes to port 8000 - use it directly
 PORT=8000
+
+# Unset any PostgreSQL environment variables that might interfere
+unset PGUSER PGHOST PGPORT PGDATABASE PGPASSWORD
+
+# Set PostgreSQL environment variables explicitly to match our config
+export PGUSER="$DB_USER"
+export PGHOST="$DB_HOST"
+export PGPORT="$DB_PORT"
+export PGDATABASE="$DB_NAME"
+export PGPASSWORD="$DB_PASS"
 
 echo "Database: $DB_HOST:$DB_PORT/$DB_NAME"
 echo "Site: $SITE_NAME"
